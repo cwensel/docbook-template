@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one
+ or more contributor license agreements.  See the NOTICE file
+ distributed with this work for additional information
+ regarding copyright ownership.  The ASF licenses this file
+ to you under the Apache License, Version 2.0 (the
+ "License"); you may not use this file except in compliance
+ with the License.  You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing,
+ software distributed under the License is distributed on an
+ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ KIND, either express or implied.  See the License for the
+ specific language governing permissions and limitations
+ under the License.
+-->
+
+<project name="dbf-docbook" default="all" basedir=".">
+
+  <!-- Load our properties -->
+  <property file="../build.properties"/>
+  <property file="build.properties"/>
+
+  <property name="dbf.basedir" location="${basedir}/docbook-framework"/>
+
+  <property name="target.doc" value="userguide"/>
+
+  <property name="src.docbook.dir" value="${basedir}/src/docbook"/>
+  <property name="src.tools.dir" value="${basedir}/src/tools"/>
+  <property name="src.examples.dir" value="${basedir}/src/examples"/>
+  <property name="src.images.dir" value="${basedir}/src/images"/>
+
+  <property name="build.dir" value="${basedir}/build"/>
+
+  <property name="build.images.dir" value="${build.dir}/images"/>
+  <property name="build.tools.dir" value="${build.dir}/tools"/>
+  <property name="build.examples.dir" value="${build.dir}/examples"/>
+
+  <property name="edit.dir" value="${basedir}/edit"/>
+
+  <property name="target.dir" value="${basedir}/target"/>
+
+  <property name="docbook.src.dir" value="${build.dir}/docbook"/>
+
+  <property name="test.showoutput" value="false"/>
+  <property name="test.haltonerror" value="true"/>
+  <property name="test.results" location="${build.dir}/testresults"/>
+
+  <!-- == Generate Docbook includes                                          == -->
+  <target name="copy-docbooks">
+
+    <mkdir dir="${docbook.src.dir}"/>
+
+    <copy todir="${docbook.src.dir}">
+      <fileset dir="${src.docbook.dir}">
+        <include name="**/*.xml"/>
+      </fileset>
+    </copy>
+
+  </target>
+
+  <target name="gen-png" unless="skip.png">
+
+    <java classname="org.apache.batik.apps.rasterizer.Main"
+          fork="true"
+          failonerror="true"
+          maxmemory="512m">
+
+             <arg value="-scriptSecurityOff"/>
+             <arg value="-d"/>
+             <arg value="${build.images.dir}"/>
+             <arg value="-m"/>
+             <arg value="image/png"/>
+             <arg value="${src.images.dir}/${target.doc}"/>
+
+             <classpath>
+               <pathelement location="${dbf.basedir}/lib/batik-all-1.7.jar"/>
+               <pathelement location="${dbf.basedir}/lib/xmlgraphics-commons-1.3.1.jar"/>
+               <pathelement location="${dbf.basedir}/lib/xml-apis-1.3.04.jar"/>
+               <pathelement location="${dbf.basedir}/lib/xml-apis-ext-1.3.04.jar"/>
+             </classpath>
+           </java>
+
+  </target>
+
+  <target name="test-examples" description="--> generates all dynamic includes" unless="skip.tests">
+
+    <mkdir dir="${docbook.src.dir}"/>
+    <copy todir="${docbook.src.dir}">
+      <fileset dir="${src.docbook.dir}">
+        <include name="**/*.xml"/>
+      </fileset>
+    </copy>
+
+    <mkdir dir="${build.examples.dir}"/>
+    <mkdir dir="${test.results}"/>
+
+    <javac srcdir="${src.examples.dir}" destdir="${build.examples.dir}" verbose="off" debug="${javac.debug}">
+    </javac>
+
+    <copy todir="${build.examples.dir}">
+      <fileset dir="${src.examples.dir}">
+        <exclude name="**/*.java"/>
+      </fileset>
+    </copy>
+
+    <junit printsummary="true" showoutput="${test.showoutput}" fork="yes" haltonerror="no" haltonfailure="no" dir="."
+           maxmemory="756m">
+
+      <sysproperty key="test.cluster.enabled" value="${test.cluster.enabled}"/>
+      <sysproperty key="test.build.data" value="data"/>
+      <sysproperty key="hadoop.log.dir" value="build/test/log"/>
+
+      <!--<jvmarg value="-Xdebug"/>--><!--<jvmarg value="-Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=5005"/>-->
+
+      <classpath>
+        <pathelement path="${java.class.path}"/>
+      </classpath>
+      <formatter type="plain" usefile="true"/>
+
+      <test name="${testcase}" todir="${test.results}" if="testcase"/>
+      <batchtest todir="${test.results}" haltonfailure="${test.haltonerror}" unless="testcase">
+        <fileset dir="${src.examples.dir}">
+          <include name="${target.doc}/**/*Test.java"/>
+        </fileset>
+      </batchtest>
+    </junit>
+
+  </target>
+
+  <target name="extract" depends="test-examples">
+    <mkdir dir="${build.tools.dir}"/>
+
+    <javac srcdir="${src.tools.dir}" destdir="${build.tools.dir}" verbose="off" debug="${javac.debug}"/>
+
+    <mkdir dir="${docbook.src.dir}/${target.doc}"/>
+
+    <java classname="docbook.Extractor">
+      <classpath>
+        <pathelement location="${build.tools.dir}"/>
+      </classpath>
+
+      <arg value="${src.examples.dir}/${target.doc}"/>
+      <arg value="${docbook.src.dir}"/>
+    </java>
+
+  </target>
+
+  <target name="includes" depends="extract, copy-docbooks"/>
+
+
+  <target name="edit" description="--> Make editable copy in edit dir" depends="extract, gen-png">
+    <mkdir dir="${edit.dir}"/>
+    <mkdir dir="${build.images.dir}"/>
+
+    <copy todir="${edit.dir}">
+      <fileset dir="${docbook.src.dir}">
+        <include name="**/*.xml"/>
+        <exclude name="**/${target.doc}.xml"/>
+      </fileset>
+    </copy>
+
+    <copy todir="${edit.dir}/${target.doc}/images">
+      <fileset dir="${src.images.dir}/${target.doc}">
+        <include name="**/*"/>
+      </fileset>
+      <fileset dir="${build.images.dir}">
+        <include name="**/*"/>
+      </fileset>
+    </copy>
+
+    <!-- copy edit to src tree if newer, then reverse -->
+    <copy preservelastmodified="true" todir="${edit.dir}/${target.doc}" file="${src.docbook.dir}/${target.doc}/${target.doc}.xml"/>
+    <copy preservelastmodified="true" todir="${src.docbook.dir}/${target.doc}" file="${edit.dir}/${target.doc}/${target.doc}.xml"/>
+
+  </target>
+
+  <!-- == Clean up the target directory                                      == -->
+  <target name="clean" description="--> Delete temporary and distribution directories for docs"
+          depends="clean-avail,clean-edit">
+
+    <delete dir="${build.dir}"/>
+
+    <ant antfile="${dbf.basedir}/build-docbook.xml" target="clean"/>
+  </target>
+
+  <target name="clean-avail">
+    <available property="edit.available" file="${edit.dir}/${target.doc}/${target.doc}.xml"/>
+  </target>
+
+  <target name="clean-edit" if="edit.available">
+
+    <uptodate property="edits.newer" srcfile="${src.docbook.dir}/${target.doc}/${target.doc}.xml"
+              targetfile="${edit.dir}/${target.doc}/${target.doc}.xml"/>
+
+    <uptodate property="orig.newer" srcfile="${edit.dir}/${target.doc}/${target.doc}.xml"
+              targetfile="${src.docbook.dir}/${target.doc}/${target.doc}.xml"/>
+
+    <fail message="userguide edits are newer">
+      <condition>
+        <and>
+        <isset property="edits.newer"/>
+          <not>
+            <isset property="orig.newer"/>
+          </not>
+        </and>
+      </condition>
+    </fail>
+
+    <delete dir="${edit.dir}"/>
+
+  </target>
+
+  <!-- == Build all the Docbook Documentation                                == -->
+  <target name="all" description="--> Build all documentation" depends="pdf,html,htmlsingle"/>
+
+  <target name="pdf" description="---> build pdf" depends="includes">
+    <ant antfile="${dbf.basedir}/build-docbook.xml" target="pdf">
+      <property name="docbook.dir" value="${target.doc}"/>
+      <property name="docbook.file" value="${target.doc}"/>
+      <property name="images.src.dir" value="${src.images.dir}/${target.doc}"/>
+    </ant>
+  </target>
+
+  <target name="html" description="---> build chunked html" depends="includes,gen-png">
+    <ant antfile="${dbf.basedir}/build-docbook.xml" target="html">
+      <property name="docbook.dir" value="${target.doc}"/>
+      <property name="docbook.file" value="${target.doc}"/>
+      <property name="images.src.dir" value="${build.images.dir}"/>
+    </ant>
+  </target>
+
+  <target name="htmlsingle" description="---> build single html" depends="includes,gen-png">
+    <ant antfile="${dbf.basedir}/build-docbook.xml" target="htmlsingle">
+      <property name="docbook.dir" value="${target.doc}"/>
+      <property name="docbook.file" value="${target.doc}"/>
+      <property name="images.src.dir" value="${build.images.dir}"/>
+    </ant>
+  </target>
+
+</project>
